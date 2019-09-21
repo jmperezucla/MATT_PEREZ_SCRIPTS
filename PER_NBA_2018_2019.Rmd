@@ -1,0 +1,353 @@
+---
+title: 'NBA Usage Rate & True Shooting %: Predicting 2019-2020 PER'
+author: "MATT_PEREZ"
+date: "8/5/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+
+if (!require(ggplot2)) install.packages("ggplot2")
+library(ggplot2)
+
+if (!require(car)) install.packages("car")
+library(car)
+
+if (!require(gplots)) install.packages("gplots")
+library(gplots)
+
+if (!require(carData)) install.packages("car")
+library(carData)
+
+if (!require(knitr)) install.packages("knitr")
+library(knitr)
+
+if (!require(faraway)) install.packages("faraway")
+library(faraway)
+
+if (!require(aod)) install.packages("aod")
+library(aod)
+
+if (!require(AER)) install.packages("AER")
+library(AER)
+
+if (!require(glmnet)) install.packages("glmnet")
+library(glmnet)
+
+if (!require(leaps)) install.packages("leaps")
+library(leaps)
+
+if (!require(CombMSC)) install.packages("CombMSC")
+library(CombMSC)
+
+if (!require(MASS)) install.packages("MASS")
+library(MASS)
+
+if (!require(lars)) install.packages("lars")
+library(lars)
+
+if (!require(boot)) install.packages("boot")
+library(boot)
+
+options(width = 130)
+options(knitr.table.format = "html")
+
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Pull
+
+I am huge basketball and NBA fan. I started going to Georgia Tech last year so I wanted to develop a model that will predict an advanced metric for NBA Basketball. I decided to see if I can used 2018-2019 Regular Season data so I can predict the PER (Player Efficiency Rating) for the 2019-2020 season. I pulled the 2018-2019 data from ESPN's Hollingers Statistics: <http://insider.espn.com/nba/hollinger/statistics>.
+
+
+I then uploaded the data sheet into R.
+```{r}
+getwd()
+setwd("/Users/matt/Downloads/")
+
+PER_NBA_2018_2019 = read.csv("PER_NBA_2018_2019.csv",head=T)
+
+head(PER_NBA_2018_2019)
+
+```
+
+
+```{r}
+#split the data for testing/training purposes
+
+PER_NBA_2018_2019_ALL =  PER_NBA_2018_2019
+head(PER_NBA_2018_2019_ALL)
+
+
+PER_NBA_2018_2019_NUM = PER_NBA_2018_2019[4:15]
+
+head(PER_NBA_2018_2019_NUM)
+
+set.seed(190)
+#split the data
+NBAtestRows=sample(nrow(PER_NBA_2018_2019_NUM),0.1*nrow(PER_NBA_2018_2019_NUM))
+NBAtestData=PER_NBA_2018_2019_NUM[NBAtestRows, ]
+NBAtrainData=PER_NBA_2018_2019_NUM[-NBAtestRows, ]
+
+
+ALLNBAtestRows=sample(nrow(PER_NBA_2018_2019_ALL),0.1*nrow(PER_NBA_2018_2019_ALL))
+ALLNBAtestData=PER_NBA_2018_2019_ALL[ALLNBAtestRows, ]
+ALLNBAtrainData=PER_NBA_2018_2019_ALL[-ALLNBAtestRows, ]
+
+
+#NBAtrainData
+
+```
+
+## Plot
+
+```{r, echo=FALSE}
+cor(PER_NBA_2018_2019_NUM)
+plot(PER_NBA_2018_2019_NUM)
+```
+
+Wins Added and Value Added are highly correlated with Player Efficiency Rating.
+
+I also see that Defensive Rebound Rate is highly correlated with Rebound Rate.
+
+
+##Create Full Linear Regression Model
+```{r}
+set.seed(190)
+
+full_standard_linear_model = lm(PER~ ., data = NBAtrainData)
+summary(full_standard_linear_model)
+
+
+```
+
+
+##Create Reduced Linear Regression Models
+```{r}
+set.seed(190)
+
+reduced_standard_linear_model = lm(PER~ GP+TS+AST+TO+ USG+VA+EWA, data = NBAtrainData)
+summary(reduced_standard_linear_model)
+
+reduced_standard_linear_model_2 = lm(PER~ GP+TS+AST+TO+ USG, data = NBAtrainData)
+summary(reduced_standard_linear_model_2)
+
+reduced_standard_linear_model_3 = lm(PER~ TS+USG, data = NBAtrainData)
+summary(reduced_standard_linear_model_3)
+```
+
+
+##Mallow's Cp
+```{r}
+n = nrow(NBAtrainData)
+c(Cp(full_standard_linear_model,S2=(0.8217^2)), AIC(full_standard_linear_model,k=2),AIC(full_standard_linear_model,k=log(n)))
+
+
+```
+
+```{r}
+
+#reduced model values
+n = nrow(NBAtrainData)
+c(Cp(reduced_standard_linear_model,S2=(1.405^2)), AIC(reduced_standard_linear_model,k=2),AIC(reduced_standard_linear_model,k=log(n)))
+
+```
+```{r}
+library(leaps)
+out = leaps(NBAtrainData [,-1] , NBAtrainData$PER, method = "Cp")
+cbind(as.matrix(out$which),out$Cp)
+best.model = which(out$Cp==min(out$Cp))
+cbind(as.matrix(out$which),out$Cp)[best.model,]
+
+```
+
+
+```{r}
+confint(full_standard_linear_model,"USAGE",level=.75)
+confint(full_standard_linear_model,"TRUE_SHOOT",level=.75)
+confint(full_standard_linear_model,"ASSIST_RATIO",level=.75)
+confint(full_standard_linear_model,"TO_RATIO",level=.75)
+
+confint(reduced_standard_linear_model,"TRUE_SHOOT",level=.75)
+confint(reduced_standard_linear_model,"ASSIST_RATIO",level=.75)
+confint(reduced_standard_linear_model,"USAGE",level=.75)
+confint(reduced_standard_linear_model,"TO_RATIO",level=.75)
+
+
+
+#IS MODEL OVERALL SIGNIFICANT
+1-pchisq((full_standard_linear_model$null.dev-full_standard_linear_model$deviance), (full_standard_linear_model$df.null-full_standard_linear_model$df.resid))
+#The p-value is close to 0 indicating the model is significant overall.
+
+#GOODNESS OF FIT
+#With deviance residuals
+#1-pchisq(full_standard_linear_model$deviance,full_standard_linear_model$df.residual)
+#with Pearson residuals
+pResid <- resid(full_standard_linear_model, type = "pearson")
+1-pchisq(sum(pResid^2),full_standard_linear_model$df.residual)
+#P-values from both goodness of fit tests are close to 0, suggesting our model is not a good fit.
+
+```
+
+
+##Create Stepwise Regression Model
+```{r}
+
+set.seed(190)
+
+
+step_fwd = step(reduced_standard_linear_model, scope = list(lower=reduced_standard_linear_model,upper=full_standard_linear_model), direction = "forward",trace=F)
+
+step_fwd
+
+set.seed(190)
+
+step_back = step(full_standard_linear_model, scope = list(lower=reduced_standard_linear_model,upper=full_standard_linear_model), direction = "backward",trace=F)
+
+```
+##Create Model Comparison Table
+```{r}
+
+
+comp=rbind(full=c(summary(full_standard_linear_model)$adj.r.sq,Cp(full_standard_linear_model,S2=summary(full_standard_linear_model)$sigma^2), AIC(full_standard_linear_model,k=2)),
+  reduced=c(summary(reduced_standard_linear_model)$adj.r.sq,Cp(reduced_standard_linear_model,S2=summary(reduced_standard_linear_model)$sigma^2), AIC(reduced_standard_linear_model,k=2)),
+  
+  reduced2=c(summary(reduced_standard_linear_model_2)$adj.r.sq,Cp(reduced_standard_linear_model_2,S2=summary(reduced_standard_linear_model_2)$sigma^2), AIC(reduced_standard_linear_model_2,k=2)),
+  
+   reduced3=c(summary(reduced_standard_linear_model_3)$adj.r.sq,Cp(reduced_standard_linear_model_3,S2=summary(reduced_standard_linear_model_3)$sigma^2), AIC(reduced_standard_linear_model_3,k=2)),
+  
+  step.fwd=c(summary(step_fwd)$adj.r.sq,Cp(step_fwd,S2=summary(step_fwd)$sigma^2), AIC(step_fwd,k=2)),
+  
+  
+  step.back=c(summary(step_back)$adj.r.sq,Cp(step_back,S2=summary(step_back)$sigma^2), AIC(step_back,k=2))
+  )
+colnames(comp) = c("adj.rsq","Cp","AIC")
+comp
+
+```
+
+##Create Ridge Regression Model
+
+```{r}
+y.scaled = scale(NBAtrainData$PER)
+X.scaled = scale(as.matrix(NBAtrainData[,-1]))
+
+#Ridge Regression
+lambda = seq(100, 110, by=0.01)
+Ridge = lm.ridge(PER~.,data=NBAtrainData, lambda = lambda)
+which(Ridge$GCV == min(Ridge$GCV))
+summary(Ridge)
+
+#For scaled predictors
+round(Ridge$coef[,which(Ridge$GCV == min(Ridge$GCV))], 4)
+#On original scale
+round(coef(Ridge)[which(Ridge$GCV == min(Ridge$GCV)),],4)
+```
+
+
+##Create Lasso Regression Model
+```{r}
+lasso.cv=cv.glmnet(as.matrix(NBAtrainData[,-1]),NBAtrainData$PER,alpha=1,nfolds=10)
+lasso = glmnet(as.matrix(NBAtrainData[,-1]),NBAtrainData$PER, alpha = 1, nlambda = 100)
+lasso.cv$lambda.min
+
+
+plot(lasso,xvar="lambda",label=TRUE,lwd=2)
+#abline(v=log(lasso$lambda.min),col='black',lty = 2,lwd=2)
+
+coef(lasso,s=lasso.cv$lambda.min)
+```
+
+
+
+8 Variables Selected for Lasso:
+GP, True Shoot, Assist Ratio, TO Ratio, Usage Rate, Offensive Rebound Rate, Rebound Rate, Value Added
+
+
+
+##Create Elastic Net Regression Model
+
+```{r}
+elastic.cv=cv.glmnet(as.matrix(NBAtrainData[,-11]),NBAtrainData$PER,alpha=0.5,nfolds=10)
+elastic = glmnet(as.matrix(NBAtrainData[,-1]), NBAtrainData$PER, alpha = 0.5, nlambda = 100)
+elastic.cv$lambda.min
+
+coef(elastic,s=elastic.cv$lambda.min)
+
+```
+9 Variables Selected for Elastic Net Regression:
+GP, True Shoot, Assist Ratio, TO Ratio, Usage Rate, Offensive Rebound Rate, Rebound Rate, Value Added, Wins Added
+
+
+
+
+##Predict Using All Regression Models
+```{r}
+full=predict(full_standard_linear_model,ALLNBAtestData)
+reduced=predict(reduced_standard_linear_model,ALLNBAtestData)
+reduced2=predict(reduced_standard_linear_model_2,ALLNBAtestData)
+reduced3=predict(reduced_standard_linear_model_3,ALLNBAtestData)
+
+
+
+step=predict(step_fwd,ALLNBAtestData)
+
+ridge=cbind(1,as.matrix(NBAtestData[,-1]))%*%coef(Ridge)[which(Ridge$GCV == min(Ridge$GCV)),]
+#Alternate method:
+#ridge=scale(as.matrix(testData[,-13]),center=mod4$xm,scale=mod4$scales) %*%
+#        mod4$coef[,which(mod4$GCV == min(mod4$GCV))]+mod4$ym
+#If response had been scaled separately before fitting the model:
+#ridge=ridge*attr(y.scaled,"scaled:scale")+attr(y.scaled,"scaled:center")
+modlasso=lm(PER~.,data=NBAtrainData)
+lasso=predict(modlasso,NBAtestData)
+elastic_pred=as.vector(predict(elastic,as.matrix(NBAtestData[,-1]),s=elastic.cv$lambda.min))
+#If predictors had been scaled separately before fitting the model:
+#Xtest.scl=scale(testData[,-13],center=attr(X.scaled,"scaled:center"),
+#                scale=attr(X.scaled,"scaled:scale"))
+#elastic=predict(mod6,Xtest.scl,s=mod6.cv$lambda.min)
+preds_names=data.frame(PLAYER=ALLNBAtestData$PLAYER,PER=ALLNBAtestData$PER,full,reduced,step,ridge,lasso,elastic_pred)
+preds=data.frame(PER=ALLNBAtestData$PER,full,reduced,reduced2, reduced3, step,ridge,lasso,elastic_pred)
+preds_names
+preds
+```
+##Compare Means Square Prediction Error (MSPE)
+```{r}
+#MEAN SQUARE PREDICTION ERROR
+#MSPE
+sapply(preds[,-1],function(x){mean((x-ALLNBAtestData$PER)^2)})
+
+preds_final_models=data.frame(PLAYER=ALLNBAtestData$PLAYER,PER=ALLNBAtestData$PER, reduced3, step)
+preds_final_models
+
+```
+
+
+
+##Predict PER for James Harden and Lebron James using Reduced 3 Model
+```{r}
+
+#USING REDUCED 3 REGRESSION MODEL, PREDICT LEBRON JAMES AND JAMES HARDEN PER
+
+
+JAMES_HARDEN=data.frame(USG=40.8, TS= .616 )
+LEBRON_JAMES=data.frame(USG=32.6, TS= .588 )
+predict(reduced_standard_linear_model_3,JAMES_HARDEN,type="response")
+
+predict(reduced_standard_linear_model_3,LEBRON_JAMES,type="response")
+
+
+
+#confint(reduced_standard_linear_model_3,"TS",level=.75)
+#confint(reduced_standard_linear_model_3,"USG",level=.75)
+
+```
+
+Given the True Shooting Percentage and Usage Rate, my model predicted that James Harden would have a 29.79074 PER. He actually had a PER of 30.62 last year. 
+
+Given the True Shooting Percentage and Usage Rate, my model predicted that Lebron James would have a 23.66057 PER. He actually had a PER of 25.64 last year. 
+
+
+I settled on using the reduced model 3 because I'd like to predict an NBA metric using the fewest data points possible. The best overall model was stepwise but I tried to predict the PER using only Usage Rate and True Shooting Percentage. 
